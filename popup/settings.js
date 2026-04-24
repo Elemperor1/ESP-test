@@ -188,7 +188,14 @@ async function sendToActiveEeTab(type) {
 
   if (!requiresDirectory && !isEasternStateTab(targetTab)) {
     const easternStateTabs = await queryEasternStateTabs();
-    targetTab = easternStateTabs.find((tab) => isDirectoryTab(tab)) || easternStateTabs[0] || null;
+    const fallbackEasternTab = easternStateTabs
+      .slice()
+      .sort((a, b) => {
+        const activeDelta = Number(Boolean(b && b.active)) - Number(Boolean(a && a.active));
+        if (activeDelta) return activeDelta;
+        return (b && b.lastAccessed ? b.lastAccessed : 0) - (a && a.lastAccessed ? a.lastAccessed : 0);
+      })[0] || null;
+    targetTab = easternStateTabs.find((tab) => isDirectoryTab(tab)) || fallbackEasternTab;
   }
 
   const isAllowedTab = requiresDirectory ? isDirectoryTab(targetTab) : isEasternStateTab(targetTab);
