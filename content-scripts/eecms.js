@@ -1051,7 +1051,7 @@ async function processCurrentEditPage(state) {
 
   if (action === "generate") {
     const discoveredPreviewUrl = findPreviewImageUrl(item.fileName, title);
-    const discoveredLinkUrl = discoveredPreviewUrl ? "" : findDirectImageLinkUrl(item.fileName, title);
+    const discoveredLinkUrl = !discoveredPreviewUrl ? findDirectImageLinkUrl(item.fileName, title) : "";
     const deterministicUrl = buildGeneralUploadUrl(item.fileName);
     imageUrl = discoveredPreviewUrl || discoveredLinkUrl || deterministicUrl || "";
   }

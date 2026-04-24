@@ -191,9 +191,9 @@ async function sendToActiveEeTab(type) {
     const fallbackEasternTab = easternStateTabs
       .slice()
       .sort((a, b) => {
-        const activeDelta = Number(Boolean(b && b.active)) - Number(Boolean(a && a.active));
+        const activeDelta = (b?.active ? 1 : 0) - (a?.active ? 1 : 0);
         if (activeDelta) return activeDelta;
-        return (b && b.lastAccessed ? b.lastAccessed : 0) - (a && a.lastAccessed ? a.lastAccessed : 0);
+        return (b?.lastAccessed ?? 0) - (a?.lastAccessed ?? 0);
       })[0] || null;
     targetTab = easternStateTabs.find((tab) => isDirectoryTab(tab)) || fallbackEasternTab;
   }
