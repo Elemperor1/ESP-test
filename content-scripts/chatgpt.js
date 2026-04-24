@@ -499,7 +499,7 @@ async function handleAltTextRequest(payload) {
   }
 
   setComposerText(composer, promptText);
-  await delay(350);
+  await delay(payload.action === "generate" ? 10000 : 350);
   await submitPrompt(composer, assistantSnapshotBefore, promptText);
   const altText = await waitForAssistantAltText(assistantSnapshotBefore);
 
