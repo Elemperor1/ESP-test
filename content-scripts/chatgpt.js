@@ -181,7 +181,7 @@ function submitComposerWithForm(composer) {
 async function submitPrompt(composer, assistantSnapshotBefore) {
   const wasSubmitted = () => {
     if (isGenerating()) return true;
-    return hasAssistantProgress(assistantSnapshotBefore, getAssistantSnapshot());
+    return hasAssistantProgress(assistantSnapshotBefore, getAssistantSnapshot({ cleanText: false }));
   };
   const attempts = [
     () => {
@@ -354,10 +354,13 @@ function getAssistantMessages() {
   return messages;
 }
 
-function getAssistantSnapshot() {
+function getAssistantSnapshot(options = {}) {
+  const cleanText = options.cleanText !== false;
   const messages = getAssistantMessages();
   const latestElement = messages[messages.length - 1] || null;
-  const latestText = latestElement ? cleanAltText(latestElement.innerText || latestElement.textContent || "") : "";
+  const latestText = cleanText && latestElement
+    ? cleanAltText(latestElement.innerText || latestElement.textContent || "")
+    : "";
 
   return {
     count: messages.length,
@@ -431,17 +434,16 @@ async function waitForAssistantAltText(assistantSnapshotBefore) {
   while (Date.now() - startedAt < RESPONSE_TIMEOUT_MS) {
     await delay(700);
 
-    const messages = getAssistantMessages();
-    const latest = messages[messages.length - 1];
+    const pollSnapshot = getAssistantSnapshot({ cleanText: false });
+    const latest = pollSnapshot.latestElement;
     if (!latest) {
       continue;
     }
 
-    const latestSignature = getMessageSignature(latest);
     const candidate = cleanAltText(latest.innerText || latest.textContent || "");
     const currentSnapshot = {
-      count: messages.length,
-      latestSignature,
+      count: pollSnapshot.count,
+      latestSignature: pollSnapshot.latestSignature,
       latestText: candidate,
     };
     const hasNewAssistantTurn = hasAssistantProgress(assistantSnapshotBefore, currentSnapshot);
