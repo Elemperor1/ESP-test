@@ -181,29 +181,7 @@ function submitComposerWithForm(composer) {
 async function submitPrompt(composer, assistantSnapshotBefore) {
   const wasSubmitted = () => {
     if (isGenerating()) return true;
-
-    const current = getAssistantSnapshot();
-    if (current.count > assistantSnapshotBefore.count) return true;
-
-    if (
-      current.latestSignature &&
-      assistantSnapshotBefore.latestSignature &&
-      current.latestSignature !== assistantSnapshotBefore.latestSignature
-    ) {
-      return true;
-    }
-
-    if (
-      !current.latestSignature &&
-      !assistantSnapshotBefore.latestSignature &&
-      current.latestText &&
-      assistantSnapshotBefore.latestText &&
-      current.latestText !== assistantSnapshotBefore.latestText
-    ) {
-      return true;
-    }
-
-    return false;
+    return hasAssistantProgress(assistantSnapshotBefore, getAssistantSnapshot());
   };
   const attempts = [
     () => {
@@ -389,6 +367,28 @@ function getAssistantSnapshot() {
   };
 }
 
+function hasAssistantProgress(previousSnapshot, currentSnapshot) {
+  if (currentSnapshot.count > previousSnapshot.count) return true;
+
+  if (
+    currentSnapshot.latestSignature &&
+    previousSnapshot.latestSignature &&
+    currentSnapshot.latestSignature !== previousSnapshot.latestSignature
+  ) {
+    return true;
+  }
+
+  if (
+    currentSnapshot.latestText &&
+    previousSnapshot.latestText &&
+    currentSnapshot.latestText !== previousSnapshot.latestText
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function isGenerating() {
   return Boolean(
     document.querySelector('[data-testid="stop-button"], button[aria-label*="Stop"], button[aria-label*="Cancel"]')
@@ -439,19 +439,12 @@ async function waitForAssistantAltText(assistantSnapshotBefore) {
 
     const latestSignature = getMessageSignature(latest);
     const candidate = cleanAltText(latest.innerText || latest.textContent || "");
-    const previousText = cleanAltText(assistantSnapshotBefore.latestText || "");
-    const hasNewAssistantTurn =
-      messages.length > assistantSnapshotBefore.count ||
-      (
-        latestSignature &&
-        assistantSnapshotBefore.latestSignature &&
-        latestSignature !== assistantSnapshotBefore.latestSignature
-      ) ||
-      (
-        candidate &&
-        previousText &&
-        candidate !== previousText
-      );
+    const currentSnapshot = {
+      count: messages.length,
+      latestSignature,
+      latestText: candidate,
+    };
+    const hasNewAssistantTurn = hasAssistantProgress(assistantSnapshotBefore, currentSnapshot);
 
     if (!hasNewAssistantTurn) {
       continue;
