@@ -357,7 +357,6 @@ function getMessageSignature(message) {
 function getAssistantMessages() {
   const selectors = [
     '[data-message-author-role="assistant"]',
-    'article[data-testid^="conversation-turn-"][data-message-author-role="assistant"]',
     '[data-testid^="conversation-turn-"] [data-message-author-role="assistant"]',
     'main article[data-message-author-role="assistant"]',
   ];
@@ -440,6 +439,7 @@ async function waitForAssistantAltText(assistantSnapshotBefore) {
 
     const latestSignature = getMessageSignature(latest);
     const candidate = cleanAltText(latest.innerText || latest.textContent || "");
+    const previousText = cleanAltText(assistantSnapshotBefore.latestText || "");
     const hasNewAssistantTurn =
       messages.length > assistantSnapshotBefore.count ||
       (
@@ -449,8 +449,8 @@ async function waitForAssistantAltText(assistantSnapshotBefore) {
       ) ||
       (
         candidate &&
-        assistantSnapshotBefore.latestText &&
-        candidate !== assistantSnapshotBefore.latestText
+        previousText &&
+        candidate !== previousText
       );
 
     if (!hasNewAssistantTurn) {
