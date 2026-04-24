@@ -1057,7 +1057,7 @@ async function processCurrentEditPage(state) {
   }
 
   if (action === "generate" && !imageUrl) {
-    await failAndPause("Missing alt text, but no deterministic image URL could be built from the file name.", item);
+    await failAndPause("Missing alt text, but no usable image URL was found on the page or from the file path.", item);
     return;
   }
 
