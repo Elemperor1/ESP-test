@@ -181,7 +181,7 @@ function submitComposerWithForm(composer) {
 async function submitPrompt(composer, assistantSnapshotBefore) {
   const wasSubmitted = () => {
     if (isGenerating()) return true;
-    return hasAssistantProgress(assistantSnapshotBefore, getAssistantSnapshot({ cleanText: false }));
+    return hasAssistantProgress(assistantSnapshotBefore, getAssistantSnapshot());
   };
   const attempts = [
     () => {
