@@ -184,12 +184,21 @@ async function submitPrompt(composer, assistantSnapshotBefore) {
 
     const current = getAssistantSnapshot();
     if (current.count > assistantSnapshotBefore.count) return true;
-    if (current.latestElement && current.latestElement !== assistantSnapshotBefore.latestElement) return true;
 
     if (
       current.latestSignature &&
       assistantSnapshotBefore.latestSignature &&
       current.latestSignature !== assistantSnapshotBefore.latestSignature
+    ) {
+      return true;
+    }
+
+    if (
+      !current.latestSignature &&
+      !assistantSnapshotBefore.latestSignature &&
+      current.latestText &&
+      assistantSnapshotBefore.latestText &&
+      current.latestText !== assistantSnapshotBefore.latestText
     ) {
       return true;
     }
@@ -432,7 +441,6 @@ async function waitForAssistantAltText(assistantSnapshotBefore) {
     const latestSignature = getMessageSignature(latest);
     const candidate = cleanAltText(latest.innerText || latest.textContent || "");
     const hasNewAssistantTurn =
-      latest !== assistantSnapshotBefore.latestElement ||
       messages.length > assistantSnapshotBefore.count ||
       (
         latestSignature &&
