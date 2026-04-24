@@ -254,14 +254,21 @@ async function handleAltTextRequest(payload) {
       const response = await executeScriptFunction(
         tab.id,
         async (requestPayload) => {
-          if (typeof globalThis.__ESP_CHATGPT_REQUEST_ALT_TEXT__ !== "function") {
+          try {
+            if (typeof globalThis.__ESP_CHATGPT_REQUEST_ALT_TEXT__ !== "function") {
+              return {
+                ok: false,
+                error: "ChatGPT helper not available in tab.",
+              };
+            }
+
+            return await globalThis.__ESP_CHATGPT_REQUEST_ALT_TEXT__(requestPayload);
+          } catch (error) {
             return {
               ok: false,
-              error: "ChatGPT helper not available in tab.",
+              error: error?.message || String(error ?? "Unknown ChatGPT helper error."),
             };
           }
-
-          return globalThis.__ESP_CHATGPT_REQUEST_ALT_TEXT__(requestPayload);
         },
         [{
           ...payload,

@@ -149,6 +149,17 @@ function setComposerText(composer, text) {
   composer.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
+function getComposerText(composer) {
+  if (!composer) return "";
+  if (composer instanceof HTMLTextAreaElement || composer instanceof HTMLInputElement) {
+    return String(composer.value || "").trim();
+  }
+
+  return String(composer.innerText || composer.textContent || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function submitComposerWithEnter(composer) {
   composer.focus();
   const keyOptions = {
@@ -178,10 +189,18 @@ function submitComposerWithForm(composer) {
   return true;
 }
 
-async function submitPrompt(composer, assistantSnapshotBefore) {
+async function submitPrompt(composer, assistantSnapshotBefore, promptText = "") {
+  const normalizedPrompt = String(promptText || "").replace(/\s+/g, " ").trim();
+  const composerStillHasPrompt = () => {
+    const currentText = getComposerText(composer).replace(/\s+/g, " ").trim();
+    if (!normalizedPrompt) return currentText.length > 0;
+    return currentText === normalizedPrompt;
+  };
   const wasSubmitted = () => {
     if (isGenerating()) return true;
-    return hasAssistantProgress(assistantSnapshotBefore, getAssistantSnapshot());
+    const hasProgress = hasAssistantProgress(assistantSnapshotBefore, getAssistantSnapshot());
+    if (hasProgress && !composerStillHasPrompt()) return true;
+    return !composerStillHasPrompt();
   };
   const attempts = [
     () => {
@@ -473,14 +492,15 @@ async function waitForAssistantAltText(assistantSnapshotBefore) {
 async function handleAltTextRequest(payload) {
   const composer = await waitFor(findComposer, 15000, 250);
   const assistantSnapshotBefore = getAssistantSnapshot();
+  const promptText = buildPrompt(payload);
 
   if (payload.action === "generate") {
     await attachImageToChat(payload);
   }
 
-  setComposerText(composer, buildPrompt(payload));
+  setComposerText(composer, promptText);
   await delay(350);
-  await submitPrompt(composer, assistantSnapshotBefore);
+  await submitPrompt(composer, assistantSnapshotBefore, promptText);
   const altText = await waitForAssistantAltText(assistantSnapshotBefore);
 
   return {
