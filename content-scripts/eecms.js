@@ -889,7 +889,11 @@ function findSaveButton() {
 }
 
 function findErrorNotice() {
-  return document.querySelector(".alert-error, .app-notice---error, .notice--error, .alert--error, [class*='error']");
+  return document.querySelector(".alert-error, .app-notice---error, .app-notice--error, .notice--error, .alert--error");
+}
+
+function findSuccessNotice() {
+  return document.querySelector(".alert-success, .app-notice---success, .app-notice--success, .notice--success, .alert--success");
 }
 
 async function failAndPause(message, item) {
@@ -962,7 +966,9 @@ async function checkSavingState(state) {
 
   const descriptionField = findDescriptionField();
   const expectedDescription = normalizeSpaces(state.current.expectedDescription);
-  if (descriptionField && getFieldValue(descriptionField) === expectedDescription) {
+  const fieldMatchesExpected = Boolean(descriptionField && getFieldValue(descriptionField) === expectedDescription);
+  const successNotice = findSuccessNotice();
+  if (fieldMatchesExpected && successNotice) {
     await markCurrentSavedAndContinue();
     return;
   }
@@ -1040,9 +1046,15 @@ async function processCurrentEditPage(state) {
 
   const titleField = findTitleField();
   const title = getFieldValue(titleField) || item.title;
-  const uploadUrl = buildGeneralUploadUrl(item.fileName);
-  const imageUrl = uploadUrl || "";
   const action = currentAction === "generate" ? "generate" : "shorten";
+  let imageUrl = "";
+
+  if (action === "generate") {
+    const discoveredPreviewUrl = findPreviewImageUrl(item.fileName, title);
+    const discoveredLinkUrl = discoveredPreviewUrl ? "" : findDirectImageLinkUrl(item.fileName, title);
+    const deterministicUrl = buildGeneralUploadUrl(item.fileName);
+    imageUrl = discoveredPreviewUrl || discoveredLinkUrl || deterministicUrl || "";
+  }
 
   if (action === "generate" && !imageUrl) {
     await failAndPause("Missing alt text, but no deterministic image URL could be built from the file name.", item);

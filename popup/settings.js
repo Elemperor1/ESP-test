@@ -58,6 +58,14 @@ function queryActiveTab() {
   });
 }
 
+function queryEasternStateTabs() {
+  return new Promise((resolve) => {
+    chrome.tabs.query({ url: "https://easternstate.org/*" }, (tabs) => {
+      resolve(Array.isArray(tabs) ? tabs : []);
+    });
+  });
+}
+
 function sendTabMessage(tabId, message) {
   return new Promise((resolve, reject) => {
     chrome.tabs.sendMessage(tabId, message, (response) => {
@@ -174,9 +182,16 @@ function escapeHtml(value) {
 }
 
 async function sendToActiveEeTab(type) {
-  const tab = await queryActiveTab();
+  const activeTab = await queryActiveTab();
   const requiresDirectory = type !== "esp:stopRun";
-  const isAllowedTab = requiresDirectory ? isDirectoryTab(tab) : isEasternStateTab(tab);
+  let targetTab = activeTab;
+
+  if (!requiresDirectory && !isEasternStateTab(targetTab)) {
+    const easternStateTabs = await queryEasternStateTabs();
+    targetTab = easternStateTabs.find((tab) => isDirectoryTab(tab)) || easternStateTabs[0] || null;
+  }
+
+  const isAllowedTab = requiresDirectory ? isDirectoryTab(targetTab) : isEasternStateTab(targetTab);
 
   if (!isAllowedTab) {
     setDot(
@@ -190,7 +205,7 @@ async function sendToActiveEeTab(type) {
   setButtonsDisabled(true);
 
   try {
-    const response = await sendTabMessage(tab.id, { type });
+    const response = await sendTabMessage(targetTab.id, { type });
     if (!response || !response.ok) {
       throw new Error(response && response.error ? response.error : "Extension command failed.");
     }
