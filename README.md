@@ -1,72 +1,42 @@
-<div align="center">
+# Eastern State Alt Text Assistant
 
-# Auto-McGraw (Smartbook)
+Chrome extension for auditing and updating image descriptions in the Eastern State ExpressionEngine file manager.
 
-<img src="assets/icon.png" alt="Auto-McGraw Logo" width="200">
+The extension targets the `General` file directory and uses an open ChatGPT tab to shorten or generate alt text. It does not use an API key or a backend service.
 
-[![Release](https://img.shields.io/github/v/release/GooglyBlox/auto-mcgraw?include_prereleases&style=flat-square&cache=1)](https://github.com/GooglyBlox/auto-mcgraw/releases)
-[![License](https://img.shields.io/github/license/GooglyBlox/auto-mcgraw?style=flat-square&cache=1)](LICENSE)
-[![Downloads](https://img.shields.io/github/downloads/GooglyBlox/auto-mcgraw/total?style=flat-square&cache=1)](https://github.com/GooglyBlox/auto-mcgraw/releases)
+## What It Does
 
-*Automate your McGraw Hill Smartbook homework with AI integration (ChatGPT, Gemini & DeepSeek)*
+- Scans the Eastern State `General` upload directory.
+- Skips image rows with an existing `Description` under 150 characters.
+- Sends existing descriptions of 150+ characters to ChatGPT for shortening.
+- Sends missing-description image previews to ChatGPT for generated alt text.
+- Validates every returned description locally before saving.
+- Pauses instead of saving if ChatGPT, image upload, validation, or CMS save confirmation fails.
 
-[Installation](#installation) • [Usage](#usage) • [Settings](#settings) • [Issues](#issues)
+## Install
 
-</div>
+1. Open Chrome and go to `chrome://extensions/`.
+2. Enable Developer mode.
+3. Click Load unpacked.
+4. Select this folder.
 
----
+## Use
 
-## Compatibility Notice
+1. Open the Eastern State CMS `General` file directory.
+2. Open ChatGPT (`https://chatgpt.com/` or `https://chat.openai.com/`) in another tab and log in.
+3. Click the extension icon.
+4. Click Scan to dry-run the directory and review counts.
+5. Click Start Saving when ready.
+6. Confirm the browser prompt before the extension saves public CMS changes.
 
-**⚠️ MacOS Users:** This extension may not work properly on MacOS due to platform-specific differences in Chrome extension behavior and system interactions. For the best experience, we recommend using this extension on Windows or Linux systems.
+The extension processes one candidate at a time. If it pauses, check the progress log in the popup, fix the flagged item manually if needed, then scan again before continuing.
 
----
+## Character Rule
 
-## Installation
+The maximum saved `Description` is 149 characters, including spaces. Existing descriptions with fewer than 150 characters are left unchanged.
 
-1. Download the latest zip from the [releases page](https://github.com/GooglyBlox/auto-mcgraw/releases)
-2. Extract the zip file to a folder
-3. Open Chrome and go to `chrome://extensions/`
-4. Enable "Developer mode" in the top right
-5. Click "Load unpacked" and select the extracted folder
+## Notes
 
-## Usage
-
-1. Log into your McGraw Hill account and open a Smartbook assignment
-2. Log into one of the supported AI assistants in another tab:
-   - [ChatGPT](https://chatgpt.com)
-   - [Gemini](https://gemini.google.com)
-   - [DeepSeek](https://chat.deepseek.com)
-3. Click the "Ask [AI Model]" button that appears in your Smartbook header
-4. Click "OK" when prompted to begin automation
-5. Watch as the extension:
-   - Sends questions to your chosen AI assistant
-   - Processes the responses
-   - Automatically fills in answers
-   - Handles multiple choice, true/false, fill-in-the-blank, and matching questions
-      - **Note about matching questions:** Matching questions now attempt full automation. If a strict, reliable match cannot be completed, the extension will show AI-suggested matches in an alert, pause, and let you finish manually before resuming on the next question.
-   - Navigates through forced learning sections when needed
-
-Click "Stop Automation" at any time to pause the process.
-
-## Settings
-
-Click the settings icon ( <img src="assets/settings-icon.svg" alt="Settings Icon" style="vertical-align: middle; width: 16px; height: 16px;"> ) next to the main button to access the settings menu, where you can:
-
-- Choose between **ChatGPT**, **Gemini**, or **DeepSeek** for answering questions
-- See the status of your AI assistant connections
-- Check if your selected AI assistant is ready to use
-
-The extension will automatically use your selected AI model for all future automation sessions.
-
-## Disclaimer
-
-This tool is for educational purposes only. Use it responsibly and be aware of your institution's academic integrity policies.
-
-Auto-McGraw is an independent project and is not affiliated with, endorsed by, sponsored by, or otherwise associated with McGraw Hill or any of its related entities.
-
-Any third-party names, trademarks, logos, assets, or likenesses referenced or displayed by this project remain the property of their respective owners and copyright holders.
-
-## Issues
-
-Found a bug? [Create an issue](https://github.com/GooglyBlox/auto-mcgraw/issues).
+- Scope is intentionally limited to the Eastern State `General` upload directory.
+- Only the ExpressionEngine `Description` field is edited.
+- The previous Auto-McGraw scripts remain in the repository history, but they are no longer loaded by the extension manifest.

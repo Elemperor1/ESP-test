@@ -1,219 +1,221 @@
-document.addEventListener("DOMContentLoaded", function () {
-  const DEEPSEEK_URL_PATTERNS = [
-    "https://chat.deepseek.com/*",
-  ];
-  const chatgptButton = document.getElementById("chatgpt");
-  const geminiButton = document.getElementById("gemini");
-  const deepseekButton = document.getElementById("deepseek");
-  const statusMessage = document.getElementById("status-message");
-  const currentVersionElement = document.getElementById("current-version");
-  const latestVersionElement = document.getElementById("latest-version");
-  const versionStatusElement = document.getElementById("version-status");
-  const checkUpdatesButton = document.getElementById("check-updates");
-  const footerVersionElement = document.getElementById("footer-version");
+const STATE_KEY = "espAltTextAssistantState";
+const DIRECTORY_MARKER = "/cp/files/directory/6";
 
-  const currentVersion = chrome.runtime.getManifest().version;
-  currentVersionElement.textContent = `v${currentVersion}`;
-  footerVersionElement.textContent = `v${currentVersion}`;
+const elements = {};
 
-  checkForUpdates();
-
-  checkUpdatesButton.addEventListener("click", checkForUpdates);
-
-  chrome.storage.sync.get("aiModel", function (data) {
-    const currentModel = data.aiModel || "chatgpt";
-
-    chatgptButton.classList.remove("active");
-    geminiButton.classList.remove("active");
-    deepseekButton.classList.remove("active");
-
-    if (currentModel === "chatgpt") {
-      chatgptButton.classList.add("active");
-    } else if (currentModel === "gemini") {
-      geminiButton.classList.add("active");
-    } else if (currentModel === "deepseek") {
-      deepseekButton.classList.add("active");
-    }
-
-    checkModelAvailability(currentModel);
+document.addEventListener("DOMContentLoaded", () => {
+  [
+    "cms-status",
+    "chatgpt-status",
+    "open-chatgpt",
+    "scan",
+    "start",
+    "stop",
+    "run-status",
+    "current-item",
+    "count-images",
+    "count-skip",
+    "count-shorten",
+    "count-generate",
+    "count-saved",
+    "count-failed",
+    "log",
+  ].forEach((id) => {
+    elements[id] = document.getElementById(id);
   });
 
-  chatgptButton.addEventListener("click", function () {
-    setActiveModel("chatgpt");
-  });
+  elements.scan.addEventListener("click", () => sendToActiveEeTab("esp:scanDirectory"));
+  elements.start.addEventListener("click", () => sendToActiveEeTab("esp:startRun"));
+  elements.stop.addEventListener("click", () => sendToActiveEeTab("esp:stopRun"));
+  elements["open-chatgpt"].addEventListener("click", openChatGPT);
 
-  geminiButton.addEventListener("click", function () {
-    setActiveModel("gemini");
-  });
-
-  deepseekButton.addEventListener("click", function () {
-    setActiveModel("deepseek");
-  });
-
-  function setActiveModel(model) {
-    chrome.storage.sync.set({ aiModel: model }, function () {
-      chatgptButton.classList.remove("active");
-      geminiButton.classList.remove("active");
-      deepseekButton.classList.remove("active");
-
-      if (model === "chatgpt") {
-        chatgptButton.classList.add("active");
-      } else if (model === "gemini") {
-        geminiButton.classList.add("active");
-      } else if (model === "deepseek") {
-        deepseekButton.classList.add("active");
-      }
-
-      checkModelAvailability(model);
-    });
-  }
-
-  const doubleCreditToggle = document.getElementById("double-credit-toggle");
-  const randomConfidenceToggle = document.getElementById("random-confidence-toggle");
-  const pauseBeforeSubmitToggle = document.getElementById("pause-before-submit-toggle");
-
-  chrome.storage.sync.get(["doubleCreditMode", "randomConfidence", "pauseBeforeSubmit"], function (data) {
-    doubleCreditToggle.checked = data.doubleCreditMode || false;
-    randomConfidenceToggle.checked = data.randomConfidence || false;
-    pauseBeforeSubmitToggle.checked = data.pauseBeforeSubmit || false;
-  });
-
-  doubleCreditToggle.addEventListener("change", function () {
-    chrome.storage.sync.set({ doubleCreditMode: this.checked });
-  });
-
-  randomConfidenceToggle.addEventListener("change", function () {
-    chrome.storage.sync.set({ randomConfidence: this.checked });
-  });
-
-  pauseBeforeSubmitToggle.addEventListener("change", function () {
-    chrome.storage.sync.set({ pauseBeforeSubmit: this.checked });
-  });
-
-  function checkModelAvailability(currentModel) {
-    statusMessage.textContent = "Checking assistant availability...";
-    statusMessage.className = "";
-
-    chrome.tabs.query({ url: "https://chatgpt.com/*" }, (chatgptTabs) => {
-      const chatgptAvailable = chatgptTabs.length > 0;
-
-      chrome.tabs.query(
-        { url: "https://gemini.google.com/*" },
-        (geminiTabs) => {
-          const geminiAvailable = geminiTabs.length > 0;
-
-          chrome.tabs.query(
-            { url: DEEPSEEK_URL_PATTERNS },
-            (deepseekTabs) => {
-              const deepseekAvailable = deepseekTabs.length > 0;
-
-              if (currentModel === "chatgpt") {
-                if (chatgptAvailable) {
-                  statusMessage.textContent =
-                    "ChatGPT tab is open and ready to use.";
-                  statusMessage.className = "success";
-                } else {
-                  statusMessage.textContent =
-                    "Please open ChatGPT in another tab to use this assistant.";
-                  statusMessage.className = "error";
-                }
-              } else if (currentModel === "gemini") {
-                if (geminiAvailable) {
-                  statusMessage.textContent =
-                    "Gemini tab is open and ready to use.";
-                  statusMessage.className = "success";
-                } else {
-                  statusMessage.textContent =
-                    "Please open Gemini in another tab to use this assistant.";
-                  statusMessage.className = "error";
-                }
-              } else if (currentModel === "deepseek") {
-                if (deepseekAvailable) {
-                  statusMessage.textContent =
-                    "DeepSeek tab is open and ready to use.";
-                  statusMessage.className = "success";
-                } else {
-                  statusMessage.textContent =
-                    "Please open DeepSeek in another tab to use this assistant.";
-                  statusMessage.className = "error";
-                }
-              }
-            }
-          );
-        }
-      );
-    });
-  }
-
-  setInterval(() => {
-    chrome.storage.sync.get("aiModel", function (data) {
-      const currentModel = data.aiModel || "chatgpt";
-      checkModelAvailability(currentModel);
-    });
-  }, 5000);
-
-  async function checkForUpdates() {
-    try {
-      versionStatusElement.textContent = "Checking for updates...";
-      versionStatusElement.className = "checking";
-      checkUpdatesButton.disabled = true;
-      latestVersionElement.textContent = "Checking...";
-
-      const response = await fetch(
-        "https://api.github.com/repos/GooglyBlox/auto-mcgraw/releases/latest"
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const releaseData = await response.json();
-      const latestVersion = releaseData.tag_name.replace("v", "");
-      latestVersionElement.textContent = `v${latestVersion}`;
-
-      const currentVersionParts = currentVersion.split(".").map(Number);
-      const latestVersionParts = latestVersion.split(".").map(Number);
-
-      let isUpdateAvailable = false;
-
-      for (
-        let i = 0;
-        i < Math.max(currentVersionParts.length, latestVersionParts.length);
-        i++
-      ) {
-        const current = currentVersionParts[i] || 0;
-        const latest = latestVersionParts[i] || 0;
-
-        if (latest > current) {
-          isUpdateAvailable = true;
-          break;
-        } else if (current > latest) {
-          break;
-        }
-      }
-
-      if (isUpdateAvailable) {
-        versionStatusElement.textContent = `New version ${releaseData.tag_name} is available!`;
-        versionStatusElement.className = "update-available";
-
-        versionStatusElement.style.cursor = "pointer";
-        versionStatusElement.onclick = () => {
-          chrome.tabs.create({ url: releaseData.html_url });
-        };
-      } else {
-        versionStatusElement.textContent = "You're using the latest version!";
-        versionStatusElement.className = "up-to-date";
-        versionStatusElement.style.cursor = "default";
-        versionStatusElement.onclick = null;
-      }
-    } catch (error) {
-      console.error("Error checking for updates:", error);
-      versionStatusElement.textContent =
-        "Error checking for updates. Please try again later.";
-      versionStatusElement.className = "error";
-      latestVersionElement.textContent = "Error";
-    } finally {
-      checkUpdatesButton.disabled = false;
-    }
-  }
+  refresh();
+  setInterval(refresh, 1000);
 });
+
+function storageGet(keys) {
+  return new Promise((resolve) => chrome.storage.local.get(keys, resolve));
+}
+
+function runtimeMessage(message) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(message, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+
+      resolve(response);
+    });
+  });
+}
+
+function queryActiveTab() {
+  return new Promise((resolve) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      resolve(tabs[0] || null);
+    });
+  });
+}
+
+function sendTabMessage(tabId, message) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(tabId, message, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+
+      resolve(response);
+    });
+  });
+}
+
+function isEasternStateTab(tab) {
+  return Boolean(tab && tab.url && tab.url.startsWith("https://easternstate.org/"));
+}
+
+function isDirectoryTab(tab) {
+  return Boolean(
+    isEasternStateTab(tab) && decodeURIComponent(tab.url).includes(DIRECTORY_MARKER)
+  );
+}
+
+function setDot(element, text, className) {
+  element.textContent = text;
+  element.className = `dot-status ${className || ""}`.trim();
+}
+
+async function refresh() {
+  const [tab, data, chatgpt] = await Promise.all([
+    queryActiveTab(),
+    storageGet(STATE_KEY),
+    runtimeMessage({ type: "esp:getChatGPTStatus" }).catch((error) => ({ ok: false, error: error.message })),
+  ]);
+
+  if (isDirectoryTab(tab)) {
+    setDot(elements["cms-status"], "General directory is active", "success");
+    elements.scan.disabled = false;
+    elements.start.disabled = false;
+  } else if (isEasternStateTab(tab)) {
+    setDot(elements["cms-status"], "Open the General file directory", "warning");
+    elements.scan.disabled = true;
+    elements.start.disabled = true;
+  } else {
+    setDot(elements["cms-status"], "Open Eastern State CMS", "error");
+    elements.scan.disabled = true;
+    elements.start.disabled = true;
+  }
+
+  if (chatgpt.ok && chatgpt.available) {
+    setDot(elements["chatgpt-status"], "ChatGPT tab is open", "success");
+  } else {
+    setDot(elements["chatgpt-status"], "ChatGPT tab is needed", "warning");
+  }
+
+  renderState(data[STATE_KEY]);
+}
+
+function renderState(state) {
+  const safeState = state || {};
+  const counts = safeState.counts || {};
+  const status = safeState.status || "idle";
+  const phase = safeState.phase || "idle";
+  const workTotal = Array.isArray(safeState.workItems) ? safeState.workItems.length : 0;
+  const index = Number.isInteger(safeState.index) ? safeState.index : 0;
+
+  elements["run-status"].textContent =
+    status === "idle"
+      ? "Idle."
+      : `${status} (${phase}) - ${Math.min(index, workTotal)} of ${workTotal} change candidates processed.`;
+
+  if (safeState.current && safeState.current.fileName) {
+    elements["current-item"].textContent = `${safeState.current.fileName} - ${safeState.current.action || phase}`;
+  } else if (workTotal && status === "scanned") {
+    elements["current-item"].textContent = `${workTotal} files need shortening or generated alt text.`;
+  } else {
+    elements["current-item"].textContent = "";
+  }
+
+  elements["count-images"].textContent = counts.imageRows || 0;
+  elements["count-skip"].textContent = counts.skip || 0;
+  elements["count-shorten"].textContent = counts.shorten || 0;
+  elements["count-generate"].textContent = counts.generate || 0;
+  elements["count-saved"].textContent = counts.saved || 0;
+  elements["count-failed"].textContent = counts.failed || 0;
+
+  elements.stop.disabled = status !== "running";
+
+  const logEntries = Array.isArray(safeState.log) ? safeState.log.slice(-20).reverse() : [];
+  elements.log.innerHTML = "";
+
+  if (!logEntries.length) {
+    const item = document.createElement("li");
+    item.textContent = "No activity yet.";
+    elements.log.appendChild(item);
+    return;
+  }
+
+  logEntries.forEach((entry) => {
+    const item = document.createElement("li");
+    const file = entry.fileName ? `<strong>${escapeHtml(entry.fileName)}</strong>: ` : "";
+    item.innerHTML = `${file}${escapeHtml(entry.message || "")}`;
+    elements.log.appendChild(item);
+  });
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+async function sendToActiveEeTab(type) {
+  const tab = await queryActiveTab();
+  const requiresDirectory = type !== "esp:stopRun";
+  const isAllowedTab = requiresDirectory ? isDirectoryTab(tab) : isEasternStateTab(tab);
+
+  if (!isAllowedTab) {
+    setDot(
+      elements["cms-status"],
+      requiresDirectory ? "Open the General file directory" : "Open an Eastern State CMS tab",
+      "error"
+    );
+    return;
+  }
+
+  setButtonsDisabled(true);
+
+  try {
+    const response = await sendTabMessage(tab.id, { type });
+    if (!response || !response.ok) {
+      throw new Error(response && response.error ? response.error : "Extension command failed.");
+    }
+    renderState(response.state);
+  } catch (error) {
+    elements["run-status"].textContent = error.message;
+  } finally {
+    setButtonsDisabled(false);
+    refresh();
+  }
+}
+
+function setButtonsDisabled(disabled) {
+  elements.scan.disabled = disabled;
+  elements.start.disabled = disabled;
+  elements.stop.disabled = disabled;
+  elements["open-chatgpt"].disabled = disabled;
+}
+
+async function openChatGPT() {
+  elements["open-chatgpt"].disabled = true;
+  try {
+    await runtimeMessage({ type: "esp:openChatGPT" });
+  } finally {
+    elements["open-chatgpt"].disabled = false;
+    refresh();
+  }
+}

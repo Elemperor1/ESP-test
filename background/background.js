@@ -1,388 +1,351 @@
-let mheTabId = null;
-let aiTabId = null;
-let aiType = null;
-let lastActiveTabId = null;
-let processingQuestion = false;
-let mheWindowId = null;
-let aiWindowId = null;
-let duplicateTabId = null;
-let originalTabId = null;
-let storedResponse = null;
-let isProcessingDuplicate = false;
-let pendingResponse = null;
-const DEEPSEEK_URL_PATTERNS = [
-  "https://chat.deepseek.com/*",
-];
+const CHATGPT_URL = "https://chatgpt.com/";
+const CHATGPT_URL_PATTERNS = ["https://chatgpt.com/*", "https://chat.openai.com/*"];
+const CHATGPT_URL_PREFIXES = ["https://chatgpt.com", "https://chat.openai.com"];
+const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+const CHATGPT_CONTENT_SCRIPT = "content-scripts/chatgpt.js";
+const RECEIVER_RETRY_ATTEMPTS = 8;
+const RECEIVER_RETRY_DELAY_MS = 500;
+const PREFERRED_CHATGPT_TAB_KEY = "espPreferredChatGPTTabId";
 
-function isDeepSeekTabUrl(url = "") {
-  return url.includes("chat.deepseek.com") || url.includes("deepseek.chat");
-}
-
-chrome.tabs.onActivated.addListener((activeInfo) => {
-  lastActiveTabId = activeInfo.tabId;
-});
-
-function sendMessageWithRetry(tabId, message, maxAttempts = 3, delay = 1000) {
+function sendTabMessage(tabId, message) {
   return new Promise((resolve, reject) => {
-    let attempts = 0;
-
-    function attemptSend() {
-      attempts++;
-      chrome.tabs.sendMessage(tabId, message, (response) => {
-        if (chrome.runtime.lastError) {
-          if (attempts < maxAttempts) {
-            setTimeout(attemptSend, delay);
-          } else {
-            reject(chrome.runtime.lastError);
-          }
-        } else {
-          resolve(response);
-        }
-      });
-    }
-
-    attemptSend();
-  });
-}
-
-async function focusTab(tabId) {
-  if (!tabId) return false;
-
-  try {
-    const tab = await chrome.tabs.get(tabId);
-
-    if (tab.windowId === chrome.windows.WINDOW_ID_CURRENT) {
-      await chrome.tabs.update(tabId, { active: true });
-      return true;
-    }
-
-    await chrome.windows.update(tab.windowId, { focused: true });
-    await chrome.tabs.update(tabId, { active: true });
-    return true;
-  } catch (error) {
-    return false;
-  }
-}
-
-async function findAndStoreTabs() {
-  const mheTabs = await chrome.tabs.query({
-    url: [
-      "https://learning.mheducation.com/*",
-      "https://ezto.mheducation.com/*",
-    ],
-  });
-  if (mheTabs.length > 0) {
-    mheTabId = mheTabs[0].id;
-    mheWindowId = mheTabs[0].windowId;
-  }
-
-  const data = await chrome.storage.sync.get("aiModel");
-  const aiModel = data.aiModel || "chatgpt";
-  aiType = aiModel;
-
-  if (aiModel === "chatgpt") {
-    const tabs = await chrome.tabs.query({ url: "https://chatgpt.com/*" });
-    if (tabs.length > 0) {
-      aiTabId = tabs[0].id;
-      aiWindowId = tabs[0].windowId;
-    } else {
-      aiTabId = null;
-    }
-  } else if (aiModel === "gemini") {
-    const tabs = await chrome.tabs.query({
-      url: "https://gemini.google.com/*",
-    });
-    if (tabs.length > 0) {
-      aiTabId = tabs[0].id;
-      aiWindowId = tabs[0].windowId;
-    } else {
-      aiTabId = null;
-    }
-  } else if (aiModel === "deepseek") {
-    const tabs = await chrome.tabs.query({
-      url: DEEPSEEK_URL_PATTERNS,
-    });
-    if (tabs.length > 0) {
-      const preferredTab =
-        tabs.find((tab) => tab.url && tab.url.includes("chat.deepseek.com")) ||
-        tabs[0];
-      aiTabId = preferredTab.id;
-      aiWindowId = preferredTab.windowId;
-    } else {
-      aiTabId = null;
-    }
-  }
-}
-
-async function shouldFocusTabs() {
-  await findAndStoreTabs();
-  return mheWindowId === aiWindowId;
-}
-
-async function processQuestion(message) {
-  if (processingQuestion) return;
-  processingQuestion = true;
-
-  try {
-    await findAndStoreTabs();
-
-    if (!aiTabId) {
-      await sendMessageWithRetry(mheTabId, {
-        type: "alertMessage",
-        message: `Please open ${aiType} in another tab before using automation.`,
-      });
-      await sendMessageWithRetry(mheTabId, {
-        type: "stopAutomation",
-      });
-      processingQuestion = false;
-      return;
-    }
-
-    if (!mheTabId) {
-      mheTabId = message.sourceTabId;
-    }
-
-    const sameWindow = await shouldFocusTabs();
-
-    if (sameWindow) {
-      await focusTab(aiTabId);
-      await new Promise((resolve) => setTimeout(resolve, 300));
-    }
-
-    await sendMessageWithRetry(aiTabId, {
-      type: "receiveQuestion",
-      question: message.question,
-    });
-
-    if (sameWindow && lastActiveTabId && lastActiveTabId !== aiTabId) {
-      setTimeout(async () => {
-        await focusTab(lastActiveTabId);
-      }, 1000);
-    }
-  } catch (error) {
-    if (mheTabId) {
-      await sendMessageWithRetry(mheTabId, {
-        type: "alertMessage",
-        message: `Error communicating with ${aiType}. Please make sure it's open in another tab.`,
-      });
-      await sendMessageWithRetry(mheTabId, {
-        type: "stopAutomation",
-      });
-    }
-  } finally {
-    processingQuestion = false;
-  }
-}
-
-async function processResponse(message) {
-  try {
-    pendingResponse = message.response;
-
-    if (duplicateTabId && isProcessingDuplicate) {
-      await sendMessageWithRetry(duplicateTabId, {
-        type: "processChatGPTResponse",
-        response: message.response,
-        isDuplicateTab: true,
-      });
-      return;
-    }
-
-    if (originalTabId) {
-      storedResponse = message.response;
-      await sendMessageWithRetry(originalTabId, {
-        type: "processChatGPTResponse",
-        response: message.response,
-        isDuplicateTab: false,
-      });
-      return;
-    }
-
-    if (!mheTabId) {
-      const mheTabs = await chrome.tabs.query({
-        url: [
-          "https://learning.mheducation.com/*",
-          "https://ezto.mheducation.com/*",
-        ],
-      });
-      if (mheTabs.length > 0) {
-        mheTabId = mheTabs[0].id;
-        mheWindowId = mheTabs[0].windowId;
-      } else {
+    chrome.tabs.sendMessage(tabId, message, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
         return;
       }
-    }
 
-    const sameWindow = await shouldFocusTabs();
-
-    if (sameWindow) {
-      await focusTab(mheTabId);
-      await new Promise((resolve) => setTimeout(resolve, 300));
-    }
-
-    await sendMessageWithRetry(mheTabId, {
-      type: "processChatGPTResponse",
-      response: message.response,
+      resolve(response);
     });
-  } catch (error) {
-    console.error("Error processing AI response:", error);
-  }
+  });
 }
 
-async function waitForTabReady(tabId, maxAttempts = 8) {
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      await chrome.tabs.get(tabId);
-
-      await sendMessageWithRetry(tabId, { type: "ping" }, 1, 300);
-
-      const tab = await chrome.tabs.get(tabId);
-      if (tab.status === "complete") {
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        return true;
+function executeScript(tabId, files) {
+  return new Promise((resolve, reject) => {
+    chrome.scripting.executeScript({ target: { tabId }, files }, () => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
       }
-    } catch (error) {
-      console.log(`Tab ${tabId} not ready, attempt ${i + 1}:`, error);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500));
+      resolve();
+    });
+  });
+}
+
+function executeScriptFunction(tabId, func, args = []) {
+  return new Promise((resolve, reject) => {
+    chrome.scripting.executeScript({ target: { tabId }, func, args }, (injectionResults) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+
+      if (!Array.isArray(injectionResults) || !injectionResults.length) {
+        resolve(undefined);
+        return;
+      }
+
+      resolve(injectionResults[0].result);
+    });
+  });
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getTab(tabId) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.get(tabId, (tab) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(tab);
+    });
+  });
+}
+
+function queryTabs(queryInfo) {
+  return new Promise((resolve) => {
+    chrome.tabs.query(queryInfo, resolve);
+  });
+}
+
+function createTab(createProperties) {
+  return new Promise((resolve) => {
+    chrome.tabs.create(createProperties, resolve);
+  });
+}
+
+function storageGet(keys) {
+  return new Promise((resolve) => chrome.storage.local.get(keys, resolve));
+}
+
+function storageSet(values) {
+  return new Promise((resolve) => chrome.storage.local.set(values, resolve));
+}
+
+async function getPreferredChatGPTTabId() {
+  const data = await storageGet(PREFERRED_CHATGPT_TAB_KEY);
+  return Number(data[PREFERRED_CHATGPT_TAB_KEY]) || null;
+}
+
+async function setPreferredChatGPTTabId(tabId) {
+  if (!tabId) return;
+  await storageSet({ [PREFERRED_CHATGPT_TAB_KEY]: tabId });
+}
+
+async function findChatGPTTab() {
+  const tabs = await listChatGPTTabs();
+  return tabs[0] || null;
+}
+
+function isChatGPTUrl(url) {
+  if (!url) return false;
+  return CHATGPT_URL_PREFIXES.some((prefix) => url.startsWith(prefix));
+}
+
+async function listChatGPTTabs() {
+  const tabMap = new Map();
+
+  for (const pattern of CHATGPT_URL_PATTERNS) {
+    const tabs = await queryTabs({ url: pattern });
+    tabs.forEach((tab) => {
+      if (tab && tab.id && isChatGPTUrl(tab.url || "")) {
+        tabMap.set(tab.id, tab);
+      }
+    });
   }
-  return false;
+
+  const preferredTabId = await getPreferredChatGPTTabId();
+  return Array.from(tabMap.values()).sort((a, b) => {
+    const preferredA = a.id === preferredTabId ? 1 : 0;
+    const preferredB = b.id === preferredTabId ? 1 : 0;
+    if (preferredA !== preferredB) return preferredB - preferredA;
+
+    const scoreA = (a.active ? 8 : 0) + (!a.discarded ? 4 : 0) + (a.status === "complete" ? 2 : 0);
+    const scoreB = (b.active ? 8 : 0) + (!b.discarded ? 4 : 0) + (b.status === "complete" ? 2 : 0);
+    if (scoreA !== scoreB) return scoreB - scoreA;
+    return (b.lastAccessed || 0) - (a.lastAccessed || 0);
+  });
+}
+
+async function waitForTabReady(tabId, timeoutMs = 20000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const tab = await getTab(tabId);
+    if (tab && tab.status === "complete" && isChatGPTUrl(tab.url || "")) {
+      return tab;
+    }
+    await delay(250);
+  }
+
+  throw new Error("Timed out waiting for ChatGPT tab to load.");
+}
+
+async function ensureReceiverReady(tabId) {
+  let lastError = new Error("Could not establish connection.");
+  for (let attempt = 0; attempt < RECEIVER_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      await executeScript(tabId, [CHATGPT_CONTENT_SCRIPT]);
+      const isReady = await executeScriptFunction(tabId, () => Boolean(globalThis.__ESP_CHATGPT_READY__));
+      if (!isReady) {
+        throw new Error("ChatGPT helper script is not ready.");
+      }
+      return;
+    } catch (error) {
+      lastError = error;
+      await delay(RECEIVER_RETRY_DELAY_MS);
+    }
+  }
+
+  throw lastError;
+}
+
+async function openFreshChatGPTTab() {
+  const newTab = await createTab({ url: CHATGPT_URL, active: false });
+  if (!newTab || !newTab.id) {
+    throw new Error("Could not open a new ChatGPT tab.");
+  }
+
+  await waitForTabReady(newTab.id);
+  return newTab;
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = "";
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, index + chunkSize);
+    binary += String.fromCharCode.apply(null, chunk);
+  }
+
+  return btoa(binary);
+}
+
+async function fetchImageAsDataUrl(imageUrl) {
+  if (!imageUrl) {
+    throw new Error("No preview image URL was found on the edit page.");
+  }
+
+  const response = await fetch(imageUrl, { credentials: "include" });
+  if (!response.ok) {
+    throw new Error(`Unable to fetch image preview (${response.status}).`);
+  }
+
+  const contentLength = Number(response.headers.get("content-length") || "0");
+  if (contentLength > MAX_IMAGE_BYTES) {
+    throw new Error("Image preview is too large to send to ChatGPT.");
+  }
+
+  const contentType = response.headers.get("content-type") || "image/jpeg";
+  if (!contentType.startsWith("image/")) {
+    throw new Error(`Preview URL did not return an image (${contentType}).`);
+  }
+
+  const buffer = await response.arrayBuffer();
+  if (buffer.byteLength > MAX_IMAGE_BYTES) {
+    throw new Error("Image preview is too large to send to ChatGPT.");
+  }
+
+  return {
+    dataUrl: `data:${contentType};base64,${arrayBufferToBase64(buffer)}`,
+    mimeType: contentType,
+  };
+}
+
+async function handleAltTextRequest(payload) {
+  const chatgptTabs = await listChatGPTTabs();
+  if (!chatgptTabs.length) {
+    try {
+      chatgptTabs.push(await openFreshChatGPTTab());
+    } catch (error) {
+      return {
+        ok: false,
+        error: `Open ChatGPT in another tab and make sure you are logged in. (${error.message})`,
+      };
+    }
+  }
+
+  let imagePayload = null;
+  if (payload.action === "generate") {
+    try {
+      imagePayload = await fetchImageAsDataUrl(payload.imageUrl);
+    } catch (error) {
+      return {
+        ok: false,
+        error: error.message,
+      };
+    }
+  }
+
+  let lastError = new Error("Could not establish connection.");
+  for (const tab of chatgptTabs) {
+    if (!tab.id) {
+      continue;
+    }
+
+    try {
+      await waitForTabReady(tab.id);
+      await ensureReceiverReady(tab.id);
+      const response = await executeScriptFunction(
+        tab.id,
+        async (requestPayload) => {
+          if (typeof globalThis.__ESP_CHATGPT_REQUEST_ALT_TEXT__ !== "function") {
+            return {
+              ok: false,
+              error: "ChatGPT helper not available in tab.",
+            };
+          }
+
+          return globalThis.__ESP_CHATGPT_REQUEST_ALT_TEXT__(requestPayload);
+        },
+        [{
+          ...payload,
+          imageDataUrl: imagePayload ? imagePayload.dataUrl : "",
+          imageMimeType: imagePayload ? imagePayload.mimeType : "",
+        }]
+      );
+
+      if (!response || !response.ok) {
+        lastError = new Error(response && response.error ? response.error : "ChatGPT did not return alt text.");
+        continue;
+      }
+
+      await setPreferredChatGPTTabId(tab.id);
+      return response;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  {
+    return {
+      ok: false,
+      error: `Unable to communicate with the ChatGPT tab: ${lastError.message}`,
+    };
+  }
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (sender.tab) {
-    message.sourceTabId = sender.tab.id;
-
-    if (
-      sender.tab.url.includes("learning.mheducation.com") ||
-      sender.tab.url.includes("ezto.mheducation.com")
-    ) {
-      if (!originalTabId && !duplicateTabId) {
-        mheTabId = sender.tab.id;
-        mheWindowId = sender.tab.windowId;
-      }
-    } else if (sender.tab.url.includes("chatgpt.com")) {
-      aiTabId = sender.tab.id;
-      aiWindowId = sender.tab.windowId;
-      aiType = "chatgpt";
-    } else if (sender.tab.url.includes("gemini.google.com")) {
-      aiTabId = sender.tab.id;
-      aiWindowId = sender.tab.windowId;
-      aiType = "gemini";
-    } else if (isDeepSeekTabUrl(sender.tab.url || "")) {
-      aiTabId = sender.tab.id;
-      aiWindowId = sender.tab.windowId;
-      aiType = "deepseek";
-    }
+  if (!message || typeof message.type !== "string") {
+    sendResponse({ ok: false, error: "Unknown message." });
+    return false;
   }
 
-  if (message.type === "ping") {
-    sendResponse({ received: true });
+  if (message.type === "esp:getChatGPTStatus") {
+    findChatGPTTab()
+      .then((tab) => {
+        sendResponse({
+          ok: true,
+          available: Boolean(tab),
+          tabId: tab ? tab.id : null,
+        });
+      })
+      .catch((error) => {
+        sendResponse({ ok: false, error: error.message });
+      });
     return true;
   }
 
-  if (message.type === "sendQuestionToChatGPT") {
-    processQuestion(message);
-    sendResponse({ received: true });
-    return true;
-  }
-
-  if (
-    message.type === "chatGPTResponse" ||
-    message.type === "geminiResponse" ||
-    message.type === "deepseekResponse"
-  ) {
-    processResponse(message);
-    sendResponse({ received: true });
-    return true;
-  }
-
-  if (message.type === "createDuplicateTab") {
-    originalTabId = sender.tab.id;
-    storedResponse = pendingResponse;
-
-    chrome.tabs.duplicate(sender.tab.id, async (newTab) => {
-      duplicateTabId = newTab.id;
-
-      const isReady = await waitForTabReady(duplicateTabId);
-
-      if (isReady) {
-        try {
-          await sendMessageWithRetry(duplicateTabId, {
-            type: "processDuplicateTab",
-            response: storedResponse,
-          });
-        } catch (error) {
-          console.error("Error sending message to duplicate tab:", error);
+  if (message.type === "esp:openChatGPT") {
+    findChatGPTTab()
+      .then((tab) => {
+        if (tab && tab.id) {
+          setPreferredChatGPTTabId(tab.id).catch(() => {});
+          chrome.tabs.update(tab.id, { active: true });
+          if (tab.windowId) {
+            chrome.windows.update(tab.windowId, { focused: true });
+          }
+          sendResponse({ ok: true, tabId: tab.id });
+          return null;
         }
-      } else {
-        console.error("Duplicate tab failed to become ready");
-      }
-    });
-    sendResponse({ received: true });
-    return true;
-  }
 
-  if (message.type === "closeDuplicateTab") {
-    if (duplicateTabId) {
-      if (originalTabId) {
-        focusTab(originalTabId);
-      }
-
-      chrome.tabs.remove(duplicateTabId, () => {
-        duplicateTabId = null;
-        isProcessingDuplicate = false;
+        return createTab({ url: CHATGPT_URL }).then((newTab) => {
+          if (newTab && newTab.id) {
+            setPreferredChatGPTTabId(newTab.id).catch(() => {});
+          }
+          sendResponse({ ok: true, tabId: newTab.id });
+        });
+      })
+      .catch((error) => {
+        sendResponse({ ok: false, error: error.message });
       });
-    }
-    sendResponse({ received: true });
     return true;
   }
 
-  if (message.type === "finishDoubleCredit") {
-    if (originalTabId) {
-      sendMessageWithRetry(originalTabId, {
-        type: "completeDoubleCredit",
+  if (message.type === "esp:requestAltText") {
+    handleAltTextRequest(message.payload || {})
+      .then(sendResponse)
+      .catch((error) => {
+        sendResponse({ ok: false, error: error.message });
       });
-    }
-    sendResponse({ received: true });
     return true;
   }
 
-  if (message.type === "resetTabTracking") {
-    duplicateTabId = null;
-    originalTabId = null;
-    storedResponse = null;
-    isProcessingDuplicate = false;
-    pendingResponse = null;
-    sendResponse({ received: true });
-    return true;
-  }
-
-  if (message.type === "openSettings") {
-    chrome.windows.create({
-      url: chrome.runtime.getURL("popup/settings.html"),
-      type: "popup",
-      width: 500,
-      height: 600,
-    });
-    sendResponse({ received: true });
-    return true;
-  }
-
-  sendResponse({ received: false });
+  sendResponse({ ok: false, error: `Unhandled message type: ${message.type}` });
   return false;
-});
-
-findAndStoreTabs();
-
-chrome.tabs.onRemoved.addListener((tabId) => {
-  if (tabId === mheTabId) mheTabId = null;
-  if (tabId === aiTabId) aiTabId = null;
-  if (tabId === duplicateTabId) {
-    duplicateTabId = null;
-    isProcessingDuplicate = false;
-  }
-  if (tabId === originalTabId) {
-    originalTabId = null;
-    storedResponse = null;
-  }
 });

@@ -1,190 +1,431 @@
-let hasResponded = false;
-let messageCountAtQuestion = 0;
-let observationStartTime = 0;
-let observationTimeout = null;
-let observer = null;
+if (!globalThis.__ESP_CHATGPT_BOOTSTRAPPED__) {
+  globalThis.__ESP_CHATGPT_BOOTSTRAPPED__ = true;
+
+const RESPONSE_TIMEOUT_MS = 180000;
+const RESPONSE_STABLE_MS = 1800;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "receiveQuestion") {
-    resetObservation();
-
-    const messages = document.querySelectorAll(
-      '[data-message-author-role="assistant"]'
-    );
-    messageCountAtQuestion = messages.length;
-    hasResponded = false;
-
-    insertQuestion(message.question)
-      .then(() => {
-        sendResponse({ received: true, status: "processing" });
-      })
-      .catch((error) => {
-        sendResponse({ received: false, error: error.message });
-      });
-
-    return true;
+  if (!message || typeof message.type !== "string") {
+    return false;
   }
+
+  if (message.type === "esp-chatgpt:ping") {
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (message.type !== "esp-chatgpt:requestAltText") {
+    return false;
+  }
+
+  handleAltTextRequest(message.payload || {})
+    .then((result) => sendResponse(result))
+    .catch((error) => {
+      sendResponse({ ok: false, error: error.message });
+    });
+
+  return true;
 });
 
-function resetObservation() {
-  hasResponded = false;
-  if (observationTimeout) {
-    clearTimeout(observationTimeout);
-    observationTimeout = null;
-  }
-  if (observer) {
-    observer.disconnect();
-    observer = null;
-  }
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function insertQuestion(questionData) {
-  const { type, question, options, previousCorrection } = questionData;
-  let text = `Type: ${type}\nQuestion: ${question}`;
-
-  if (
-    previousCorrection &&
-    previousCorrection.question &&
-    previousCorrection.correctAnswer
-  ) {
-    text =
-      `CORRECTION FROM PREVIOUS ANSWER: For the question "${
-        previousCorrection.question
-      }", your answer was incorrect. The correct answer was: ${JSON.stringify(
-        previousCorrection.correctAnswer
-      )}\n\nNow answer this new question:\n\n` + text;
-  }
-
-  if (type === "matching") {
-    text +=
-      "\nPrompts:\n" +
-      options.prompts.map((prompt, i) => `${i + 1}. ${prompt}`).join("\n");
-    text +=
-      "\nChoices:\n" +
-      options.choices.map((choice, i) => `${i + 1}. ${choice}`).join("\n");
-    text +=
-      '\n\nPlease match each prompt with the correct choice. Set "answer" to an array of strings using the exact format \'Prompt -> Choice\'. Include one entry per prompt, use exact prompt and choice text, and use each choice at most once.';
-  } else if (type === "fill_in_the_blank") {
-    text +=
-      "\n\nThis is a fill in the blank question. If there are multiple blanks, provide answers as an array in order of appearance. For a single blank, you can provide a string.";
-  } else if (options && options.length > 0) {
-    text +=
-      "\nOptions:\n" + options.map((opt, i) => `${i + 1}. ${opt}`).join("\n");
-    text +=
-      "\n\nIMPORTANT: Your answer must EXACTLY match one of the above options. Do not include numbers in your answer. If there are periods, include them.";
-  }
-
-  text +=
-    '\n\nPlease provide your answer in JSON format with keys "answer" and "explanation". Explanations should be no more than one sentence. DO NOT acknowledge the correction in your response, only answer the new question.';
-
+function waitFor(predicate, timeout = 10000, interval = 150) {
   return new Promise((resolve, reject) => {
-    const inputArea = document.getElementById("prompt-textarea");
-    if (inputArea) {
-      setTimeout(() => {
-        inputArea.focus();
-        inputArea.innerHTML = `<p>${text}</p>`;
-        inputArea.dispatchEvent(new Event("input", { bubbles: true }));
+    const start = Date.now();
+    const timer = setInterval(() => {
+      const value = predicate();
+      if (value) {
+        clearInterval(timer);
+        resolve(value);
+        return;
+      }
 
-        setTimeout(() => {
-          const sendButton = document.querySelector(
-            '[data-testid="send-button"]'
-          );
-          if (sendButton) {
-            sendButton.click();
-            startObserving();
-            resolve();
-          } else {
-            reject(new Error("Send button not found"));
-          }
-        }, 300);
-      }, 300);
-    } else {
-      reject(new Error("Input area not found"));
-    }
+      if (Date.now() - start > timeout) {
+        clearInterval(timer);
+        reject(new Error("Timed out waiting for ChatGPT UI."));
+      }
+    }, interval);
   });
 }
 
-function startObserving() {
-  observationStartTime = Date.now();
-  observationTimeout = setTimeout(() => {
-    if (!hasResponded) {
-      resetObservation();
-    }
-  }, 180000);
+function findComposer() {
+  const selectors = [
+    "#prompt-textarea",
+    '[data-testid="prompt-textarea"]',
+    'div[contenteditable="true"][role="textbox"]',
+    '[role="textbox"][contenteditable="true"]',
+    ".ProseMirror",
+    "textarea",
+  ];
 
-  observer = new MutationObserver((mutations) => {
-    if (hasResponded) return;
+  for (const selector of selectors) {
+    const element = document.querySelector(selector);
+    if (element) return element;
+  }
 
-    const messages = document.querySelectorAll(
-      '[data-message-author-role="assistant"]'
-    );
-    if (!messages.length) return;
+  return null;
+}
 
-    if (messages.length <= messageCountAtQuestion) return;
+function findSendButton(composer) {
+  const form = composer && typeof composer.closest === "function" ? composer.closest("form") : null;
+  const selectors = [
+    '[data-testid="send-button"]',
+    'button[data-testid="send-button"]',
+    'button[type="submit"]',
+    '[role="button"][data-testid*="send"]',
+    'button[data-testid*="send"]',
+    '[data-testid*="composer-send"]',
+    'button[aria-label="Send prompt"]',
+    'button[aria-label="Send message"]',
+    'button[aria-label*="Send"]',
+    'button[title*="Send"]',
+  ];
 
-    const latestMessage = messages[messages.length - 1];
-    const codeBlocks = latestMessage.querySelectorAll("pre code");
-    let responseText = "";
+  for (const selector of selectors) {
+    const button = (form && form.querySelector(selector)) || document.querySelector(selector);
+    if (isUsableButton(button)) return button;
+  }
 
-    for (const block of codeBlocks) {
-      if (block.className.includes("language-json")) {
-        responseText = block.textContent.trim();
-        break;
+  const buttons = Array.from((form || document).querySelectorAll("button, [role='button']"));
+  const composerRect = composer && composer.getBoundingClientRect ? composer.getBoundingClientRect() : null;
+  return buttons
+    .reverse()
+    .find((button) => {
+      if (!isUsableButton(button)) return false;
+      if (composerRect && button.getBoundingClientRect) {
+        const rect = button.getBoundingClientRect();
+        const nearComposer = Math.abs(rect.top - composerRect.bottom) < 220 && rect.left > composerRect.left - 80;
+        if (!nearComposer) return false;
       }
+
+      const label = `${button.getAttribute("aria-label") || ""} ${button.textContent || ""}`.toLowerCase();
+      if (label.includes("send")) return true;
+      if (label.includes("submit")) return true;
+
+      const title = (button.getAttribute("title") || "").toLowerCase();
+      return title.includes("send") || title.includes("submit");
+    }) || null;
+}
+
+function isUsableButton(button) {
+  if (!button) return false;
+  if (button.getAttribute("hidden") !== null) return false;
+  if (button.disabled) return false;
+  if (button.getAttribute("aria-disabled") === "true") return false;
+  return true;
+}
+
+function setNativeValue(input, value) {
+  const prototype = Object.getPrototypeOf(input);
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
+
+  if (descriptor && descriptor.set) {
+    descriptor.set.call(input, value);
+  } else {
+    input.value = value;
+  }
+}
+
+function setComposerText(composer, text) {
+  composer.focus();
+
+  if (composer instanceof HTMLTextAreaElement || composer instanceof HTMLInputElement) {
+    setNativeValue(composer, text);
+  } else {
+    composer.innerHTML = "";
+    const paragraph = document.createElement("p");
+    paragraph.textContent = text;
+    composer.appendChild(paragraph);
+  }
+
+  composer.dispatchEvent(new InputEvent("input", {
+    bubbles: true,
+    cancelable: true,
+    inputType: "insertText",
+    data: text,
+  }));
+  composer.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function submitComposerWithEnter(composer) {
+  composer.focus();
+  const keyOptions = {
+    key: "Enter",
+    code: "Enter",
+    which: 13,
+    keyCode: 13,
+    bubbles: true,
+    cancelable: true,
+  };
+
+  composer.dispatchEvent(new KeyboardEvent("keydown", keyOptions));
+  composer.dispatchEvent(new KeyboardEvent("keypress", keyOptions));
+  composer.dispatchEvent(new KeyboardEvent("keyup", keyOptions));
+}
+
+function submitComposerWithForm(composer) {
+  const form = composer.closest("form");
+  if (!form) return false;
+
+  if (typeof form.requestSubmit === "function") {
+    form.requestSubmit();
+    return true;
+  }
+
+  form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  return true;
+}
+
+async function submitPrompt(composer, messageCountBefore) {
+  const wasSubmitted = () => getAssistantMessages().length > messageCountBefore || isGenerating();
+  const attempts = [
+    () => {
+      const sendButton = findSendButton(composer);
+      if (!sendButton) return false;
+      sendButton.click();
+      return true;
+    },
+    () => submitComposerWithForm(composer),
+    () => {
+      submitComposerWithEnter(composer);
+      return true;
+    },
+  ];
+
+  for (const attempt of attempts) {
+    attempt();
+    await delay(550);
+    if (wasSubmitted()) {
+      return;
     }
+  }
 
-    if (!responseText) {
-      responseText = latestMessage.textContent.trim();
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) responseText = jsonMatch[0];
+  throw new Error("Could not submit the prompt in ChatGPT. The prompt is prepared but not sending.");
+}
+
+function dataUrlToFile(dataUrl, filename, mimeType) {
+  const base64 = dataUrl.split(",")[1] || "";
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return new File([bytes], filename, { type: mimeType || "image/jpeg" });
+}
+
+function findFileInput() {
+  const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+  return inputs.find((input) => {
+    const accept = input.getAttribute("accept") || "";
+    return !accept || accept.includes("image") || accept.includes("*");
+  }) || inputs[0] || null;
+}
+
+function findAttachButton() {
+  const selectors = [
+    'button[aria-label*="Attach"]',
+    'button[aria-label*="Upload"]',
+    '[data-testid="composer-plus-btn"]',
+    'button[data-testid*="attach"]',
+  ];
+
+  for (const selector of selectors) {
+    const button = document.querySelector(selector);
+    if (isUsableButton(button)) return button;
+  }
+
+  return null;
+}
+
+async function attachImageToChat(payload) {
+  if (!payload.imageDataUrl) {
+    throw new Error("No image data was provided for missing alt text.");
+  }
+
+  const initialBlobPreviewCount = Array.from(document.querySelectorAll("img"))
+    .filter((image) => {
+      const source = image.currentSrc || image.src || "";
+      return source.startsWith("blob:") || source.startsWith("data:");
+    }).length;
+  let input = findFileInput();
+  if (!input) {
+    const attachButton = findAttachButton();
+    if (attachButton) {
+      attachButton.click();
+      await delay(300);
+      input = findFileInput();
     }
+  }
 
-    responseText = responseText
-      .replace(/[\u200B-\u200D\uFEFF]/g, "")
-      .replace(/\n\s*/g, " ")
-      .trim();
+  if (!input) {
+    throw new Error("Could not find ChatGPT's image upload control.");
+  }
 
+  const file = dataUrlToFile(
+    payload.imageDataUrl,
+    payload.fileName || "eastern-state-image.jpg",
+    payload.imageMimeType || "image/jpeg"
+  );
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  input.files = transfer.files;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+
+  await waitFor(() => {
+    const images = Array.from(document.querySelectorAll("img"));
+    const blobPreviewCount = images.filter((image) => {
+      const source = image.currentSrc || image.src || "";
+      return source.startsWith("blob:") || source.startsWith("data:");
+    }).length;
+    const hasBlobPreview = blobPreviewCount > initialBlobPreviewCount;
+    const hasAttachmentText = document.body.textContent.includes(file.name);
+    return hasBlobPreview || hasAttachmentText;
+  }, 15000, 300);
+}
+
+function buildPrompt(payload) {
+  const prefix = "Return only the alt text. Do not add quotation marks, labels, Markdown, or explanation.";
+  const lengthRule = `It must be fewer than ${payload.maxLength + 1 || 150} characters including spaces.`;
+  const styleRule = "Use concise, objective, plain descriptive language. Avoid 'image of' or 'photo of' unless useful.";
+  const context = [
+    payload.title ? `Title: ${payload.title}` : "",
+    payload.fileName ? `File name: ${payload.fileName}` : "",
+  ].filter(Boolean).join("\n");
+
+  if (payload.action === "shorten") {
+    return [
+      `Rewrite this alt text. ${lengthRule}`,
+      styleRule,
+      prefix,
+      context,
+      `Current alt text: ${payload.existingText || ""}`,
+      payload.previousOutput ? `Previous output was invalid: ${payload.previousOutput}` : "",
+    ].filter(Boolean).join("\n\n");
+  }
+
+  return [
+    `Generate alt text for the attached image. ${lengthRule}`,
+    styleRule,
+    prefix,
+    payload.imageUrl ? `Image link: ${payload.imageUrl}` : "",
+    context,
+    payload.previousOutput ? `Previous output was invalid: ${payload.previousOutput}` : "",
+  ].filter(Boolean).join("\n\n");
+}
+
+function getAssistantMessages() {
+  const selectors = [
+    '[data-message-author-role="assistant"]',
+    '[data-testid^="conversation-turn-"] [data-message-author-role="assistant"]',
+  ];
+
+  const seen = new Set();
+  const messages = [];
+
+  for (const selector of selectors) {
+    document.querySelectorAll(selector).forEach((element) => {
+      if (!seen.has(element)) {
+        seen.add(element);
+        messages.push(element);
+      }
+    });
+  }
+
+  return messages;
+}
+
+function isGenerating() {
+  return Boolean(
+    document.querySelector('[data-testid="stop-button"], button[aria-label*="Stop"], button[aria-label*="Cancel"]')
+  );
+}
+
+function cleanAltText(rawText) {
+  let text = String(rawText || "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/```[\s\S]*?```/g, (match) => match.replace(/```(?:text|json)?/gi, "").replace(/```/g, ""))
+    .trim();
+
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
     try {
-      const parsed = JSON.parse(responseText);
-      if (parsed.answer && !hasResponded) {
-        hasResponded = true;
-        chrome.runtime
-          .sendMessage({
-            type: "chatGPTResponse",
-            response: responseText,
-          })
-          .then(() => {
-            resetObservation();
-          })
-          .catch((error) => {
-            console.error("Error sending response:", error);
-          });
-      }
-    } catch (e) {
-      const isGenerating = latestMessage.querySelector(".result-streaming");
-      if (!isGenerating && Date.now() - observationStartTime > 30000) {
-        const responseText = latestMessage.textContent.trim();
-        try {
-          const jsonPattern =
-            /\{[\s\S]*?"answer"[\s\S]*?"explanation"[\s\S]*?\}/;
-          const jsonMatch = responseText.match(jsonPattern);
-
-          if (jsonMatch && !hasResponded) {
-            hasResponded = true;
-            chrome.runtime.sendMessage({
-              type: "chatGPTResponse",
-              response: jsonMatch[0],
-            });
-            resetObservation();
-          }
-        } catch (e) {}
-      }
+      const parsed = JSON.parse(jsonMatch[0]);
+      text = parsed.alt || parsed.altText || parsed.answer || parsed.description || text;
+    } catch (error) {
+      // Keep the plain text if parsing fails.
     }
-  });
+  }
 
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-    characterData: true,
-  });
+  text = text
+    .replace(/^(?:alt text|description|answer)\s*:\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+    text = text.slice(1, -1).trim();
+  }
+
+  return text;
+}
+
+async function waitForAssistantAltText(messageCountBefore) {
+  const startedAt = Date.now();
+  let lastText = "";
+  let lastChangedAt = Date.now();
+
+  while (Date.now() - startedAt < RESPONSE_TIMEOUT_MS) {
+    await delay(700);
+
+    const messages = getAssistantMessages();
+    if (messages.length <= messageCountBefore) {
+      continue;
+    }
+
+    const latest = messages[messages.length - 1];
+    const candidate = cleanAltText(latest.innerText || latest.textContent || "");
+    if (!candidate) {
+      continue;
+    }
+
+    if (candidate !== lastText) {
+      lastText = candidate;
+      lastChangedAt = Date.now();
+      continue;
+    }
+
+    if (!isGenerating() && Date.now() - lastChangedAt >= RESPONSE_STABLE_MS) {
+      return lastText;
+    }
+  }
+
+  throw new Error("Timed out waiting for ChatGPT to return alt text.");
+}
+
+async function handleAltTextRequest(payload) {
+  const composer = await waitFor(findComposer, 15000, 250);
+  const messageCountBefore = getAssistantMessages().length;
+
+  if (payload.action === "generate") {
+    await attachImageToChat(payload);
+  }
+
+  setComposerText(composer, buildPrompt(payload));
+  await delay(350);
+  await submitPrompt(composer, messageCountBefore);
+  const altText = await waitForAssistantAltText(messageCountBefore);
+
+  return {
+    ok: true,
+    altText,
+  };
+}
+
+// Expose a direct callable API for scripting.executeScript fallback mode.
+globalThis.__ESP_CHATGPT_READY__ = true;
+globalThis.__ESP_CHATGPT_REQUEST_ALT_TEXT__ = handleAltTextRequest;
 }
