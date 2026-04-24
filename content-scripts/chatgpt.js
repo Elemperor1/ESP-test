@@ -199,7 +199,7 @@ async function submitPrompt(composer, assistantSnapshotBefore, promptText = "") 
   const wasSubmitted = () => {
     if (isGenerating()) return true;
     const hasProgress = hasAssistantProgress(assistantSnapshotBefore, getAssistantSnapshot());
-    if (hasProgress && !composerStillHasPrompt()) return true;
+    if (!hasProgress) return false;
     return !composerStillHasPrompt();
   };
   const attempts = [
