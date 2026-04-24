@@ -889,11 +889,11 @@ function findSaveButton() {
 }
 
 function findErrorNotice() {
-  return document.querySelector(".alert-error, .app-notice---error, .app-notice--error, .notice--error, .alert--error");
+  return document.querySelector(".alert-error, .app-notice--error, .notice--error, .alert--error");
 }
 
 function findSuccessNotice() {
-  return document.querySelector(".alert-success, .app-notice---success, .app-notice--success, .notice--success, .alert--success");
+  return document.querySelector(".alert-success, .app-notice--success, .notice--success, .alert--success");
 }
 
 async function failAndPause(message, item) {

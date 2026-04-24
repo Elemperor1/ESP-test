@@ -198,7 +198,7 @@ async function sendToActiveEeTab(type) {
     targetTab = easternStateTabs.find((tab) => isDirectoryTab(tab)) || fallbackEasternTab;
   }
 
-  const isAllowedTab = requiresDirectory ? isDirectoryTab(targetTab) : isEasternStateTab(targetTab);
+  const isAllowedTab = Boolean(targetTab) && (requiresDirectory ? isDirectoryTab(targetTab) : isEasternStateTab(targetTab));
 
   if (!isAllowedTab) {
     setDot(
