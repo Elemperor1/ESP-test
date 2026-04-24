@@ -200,7 +200,7 @@ async function sendToActiveEeTab(type) {
 
   const isAllowedTab = Boolean(targetTab) && (requiresDirectory ? isDirectoryTab(targetTab) : isEasternStateTab(targetTab));
 
-  if (!isAllowedTab) {
+  if (!isAllowedTab || !targetTab) {
     setDot(
       elements["cms-status"],
       requiresDirectory ? "Open the General file directory" : "Open an Eastern State CMS tab",
