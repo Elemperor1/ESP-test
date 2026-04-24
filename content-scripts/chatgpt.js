@@ -178,8 +178,11 @@ function submitComposerWithForm(composer) {
   return true;
 }
 
-async function submitPrompt(composer, messageCountBefore) {
-  const wasSubmitted = () => getAssistantMessages().length > messageCountBefore || isGenerating();
+async function submitPrompt(composer, assistantSnapshotBefore) {
+  const wasSubmitted = () => {
+    if (isGenerating()) return true;
+    return hasAssistantProgress(assistantSnapshotBefore, getAssistantSnapshot());
+  };
   const attempts = [
     () => {
       const sendButton = findSendButton(composer);
@@ -318,10 +321,22 @@ function buildPrompt(payload) {
   ].filter(Boolean).join("\n\n");
 }
 
+function getMessageSignature(message) {
+  if (!message) return "";
+
+  return (
+    message.getAttribute("data-message-id") ||
+    message.getAttribute("data-testid") ||
+    message.id ||
+    ""
+  );
+}
+
 function getAssistantMessages() {
   const selectors = [
     '[data-message-author-role="assistant"]',
     '[data-testid^="conversation-turn-"] [data-message-author-role="assistant"]',
+    'main article[data-message-author-role="assistant"]',
   ];
 
   const seen = new Set();
@@ -337,6 +352,44 @@ function getAssistantMessages() {
   }
 
   return messages;
+}
+
+function getAssistantSnapshot(options = {}) {
+  const cleanText = options.cleanText !== false;
+  const messages = getAssistantMessages();
+  const latestElement = messages[messages.length - 1] || null;
+  const latestText = cleanText && latestElement
+    ? cleanAltText(latestElement.innerText || latestElement.textContent || "")
+    : "";
+
+  return {
+    count: messages.length,
+    latestElement,
+    latestSignature: getMessageSignature(latestElement),
+    latestText,
+  };
+}
+
+function hasAssistantProgress(previousSnapshot, currentSnapshot) {
+  if (currentSnapshot.count > previousSnapshot.count) return true;
+
+  if (
+    currentSnapshot.latestSignature &&
+    previousSnapshot.latestSignature &&
+    currentSnapshot.latestSignature !== previousSnapshot.latestSignature
+  ) {
+    return true;
+  }
+
+  if (
+    currentSnapshot.latestText &&
+    previousSnapshot.latestText &&
+    currentSnapshot.latestText !== previousSnapshot.latestText
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 function isGenerating() {
@@ -373,7 +426,7 @@ function cleanAltText(rawText) {
   return text;
 }
 
-async function waitForAssistantAltText(messageCountBefore) {
+async function waitForAssistantAltText(assistantSnapshotBefore) {
   const startedAt = Date.now();
   let lastText = "";
   let lastChangedAt = Date.now();
@@ -381,13 +434,24 @@ async function waitForAssistantAltText(messageCountBefore) {
   while (Date.now() - startedAt < RESPONSE_TIMEOUT_MS) {
     await delay(700);
 
-    const messages = getAssistantMessages();
-    if (messages.length <= messageCountBefore) {
+    const pollSnapshot = getAssistantSnapshot({ cleanText: false });
+    const latest = pollSnapshot.latestElement;
+    if (!latest) {
       continue;
     }
 
-    const latest = messages[messages.length - 1];
     const candidate = cleanAltText(latest.innerText || latest.textContent || "");
+    const currentSnapshot = {
+      count: pollSnapshot.count,
+      latestSignature: pollSnapshot.latestSignature,
+      latestText: candidate,
+    };
+    const hasNewAssistantTurn = hasAssistantProgress(assistantSnapshotBefore, currentSnapshot);
+
+    if (!hasNewAssistantTurn) {
+      continue;
+    }
+
     if (!candidate) {
       continue;
     }
@@ -408,7 +472,7 @@ async function waitForAssistantAltText(messageCountBefore) {
 
 async function handleAltTextRequest(payload) {
   const composer = await waitFor(findComposer, 15000, 250);
-  const messageCountBefore = getAssistantMessages().length;
+  const assistantSnapshotBefore = getAssistantSnapshot();
 
   if (payload.action === "generate") {
     await attachImageToChat(payload);
@@ -416,8 +480,8 @@ async function handleAltTextRequest(payload) {
 
   setComposerText(composer, buildPrompt(payload));
   await delay(350);
-  await submitPrompt(composer, messageCountBefore);
-  const altText = await waitForAssistantAltText(messageCountBefore);
+  await submitPrompt(composer, assistantSnapshotBefore);
+  const altText = await waitForAssistantAltText(assistantSnapshotBefore);
 
   return {
     ok: true,
