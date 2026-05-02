@@ -3451,11 +3451,18 @@ function optionLabel(option) {
 
 function findReactSelectComponentFromNode(node) {
   let fiber = getReactFiber(node);
-  // Check before traversal: if the original node has aria-haspopup="listbox",
-  // use its fiber directly rather than risking returning a mismatched ancestor.
+  // Check before traversal: if the original node has aria-haspopup="listbox" and
+  // its own fiber already carries React Select props (options + onChange), return
+  // immediately so we don't accidentally walk up to an unrelated ancestor fiber.
   if (node instanceof Element && node.getAttribute("aria-haspopup") === "listbox" && fiber) {
-    const props = fiber.memoizedProps || fiber.pendingProps || {};
-    return { fiber, props, source: "aria-haspopup" };
+    const earlyProps = fiber.memoizedProps || fiber.pendingProps || {};
+    const earlySelectProps = earlyProps.selectProps || {};
+    if (Array.isArray(earlyProps.options) && typeof earlyProps.onChange === "function") {
+      return { fiber, props: earlyProps, source: "aria-haspopup" };
+    }
+    if (Array.isArray(earlySelectProps.options) && typeof earlySelectProps.onChange === "function") {
+      return { fiber, props: earlySelectProps, source: "aria-haspopup" };
+    }
   }
   while (fiber) {
     const props = fiber.memoizedProps || fiber.pendingProps || {};
