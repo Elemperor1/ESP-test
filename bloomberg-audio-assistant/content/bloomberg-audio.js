@@ -1723,12 +1723,13 @@ function findPanelFromHeading(headingText) {
     const largeEnough = area > viewportArea * 0.08;
     const notFullscreen = area < viewportArea * 0.98;
     if (hasHeading && hasAction && largeEnough && notFullscreen && inputCount > 0) {
-      candidates.push(ancestor);
+      candidates.push({ element: ancestor, area });
     }
     ancestor = ancestor.parentElement;
   }
 
-  return candidates.sort((a, b) => elementArea(b) - elementArea(a))[0] || null;
+  candidates.sort((a, b) => a.area - b.area);
+  return candidates[0] ? candidates[0].element : null;
 }
 
 function findStructuredPanel(kind) {
@@ -3451,33 +3452,30 @@ function optionLabel(option) {
 
 function findReactSelectComponentFromNode(node) {
   let fiber = getReactFiber(node);
+  // Check before traversal: if the original node has aria-haspopup="listbox" and
+  // its own fiber already carries React Select props (options + onChange), return
+  // immediately so we don't accidentally walk up to an unrelated ancestor fiber.
+  if (node instanceof Element && node.getAttribute("aria-haspopup") === "listbox" && fiber) {
+    const earlyProps = fiber.memoizedProps || fiber.pendingProps || {};
+    const earlySelectProps = earlyProps.selectProps || {};
+    if (Array.isArray(earlyProps.options) && typeof earlyProps.onChange === "function") {
+      return { fiber, props: earlyProps, source: "aria-haspopup" };
+    }
+    if (Array.isArray(earlySelectProps.options) && typeof earlySelectProps.onChange === "function") {
+      return { fiber, props: earlySelectProps, source: "aria-haspopup" };
+    }
+  }
   while (fiber) {
     const props = fiber.memoizedProps || fiber.pendingProps || {};
     const selectProps = props.selectProps || {};
-    
-    // Check for React Select props (multiple possible patterns)
-    const hasOptions = Array.isArray(props.options) || Array.isArray(selectProps.options);
-    const hasOnChange = typeof props.onChange === "function" || typeof selectProps.onChange === "function";
-    
-    // Also check for common React Select prop names
-    const isSelectComponent = 
-      props.className && typeof props.className === 'string' && 
-      (props.className.includes('select__') || props.className.includes('Select__') || 
-       props.className.includes('docent-select__'));
-    
-    if ((hasOptions && hasOnChange) || isSelectComponent) {
-      return { 
-        fiber, 
-        props: hasOptions ? (Array.isArray(props.options) ? props : selectProps) : props,
-        source: Array.isArray(props.options) ? "props" : "selectProps"
-      };
+
+    if (Array.isArray(props.options) && typeof props.onChange === "function") {
+      return { fiber, props, source: "props" };
     }
-    
-    // Also check for any component that has aria-haspopup='listbox" (strong indicator of select)
-    if (node instanceof Element && node.getAttribute("aria-haspopup") === "listbox") {
-      return { fiber, props: props, source: "aria-haspopup" };
+    if (Array.isArray(selectProps.options) && typeof selectProps.onChange === "function") {
+      return { fiber, props: selectProps, source: "selectProps" };
     }
-    
+
     fiber = fiber.return;
   }
   return null;
