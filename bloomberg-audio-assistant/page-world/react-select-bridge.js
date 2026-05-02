@@ -57,8 +57,8 @@
     while (fiber) {
       const props = fiber.memoizedProps || fiber.pendingProps || {};
       const selectProps = props.selectProps || {};
-      if (Array.isArray(props.options) && typeof props.onChange === "function") return { props, source: "props" };
-      if (Array.isArray(selectProps.options) && typeof selectProps.onChange === "function") return { props: selectProps, source: "selectProps" };
+      if (Array.isArray(props.options) && typeof props.onChange === "function") return { fiber, props, source: "props" };
+      if (Array.isArray(selectProps.options) && typeof selectProps.onChange === "function") return { fiber, props: selectProps, source: "selectProps" };
       fiber = fiber.return;
     }
     return null;

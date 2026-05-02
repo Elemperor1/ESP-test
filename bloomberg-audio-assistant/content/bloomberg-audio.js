@@ -1728,7 +1728,7 @@ function findPanelFromHeading(headingText) {
     ancestor = ancestor.parentElement;
   }
 
-  return candidates.sort((a, b) => elementArea(b) - elementArea(a))[0] || null;
+  return candidates.sort((a, b) => elementArea(a) - elementArea(b))[0] || null;
 }
 
 function findStructuredPanel(kind) {
@@ -3451,6 +3451,12 @@ function optionLabel(option) {
 
 function findReactSelectComponentFromNode(node) {
   let fiber = getReactFiber(node);
+  // Check before traversal: if the original node has aria-haspopup="listbox",
+  // use its fiber directly rather than risking returning a mismatched ancestor.
+  if (node instanceof Element && node.getAttribute("aria-haspopup") === "listbox" && fiber) {
+    const props = fiber.memoizedProps || fiber.pendingProps || {};
+    return { fiber, props, source: "aria-haspopup" };
+  }
   while (fiber) {
     const props = fiber.memoizedProps || fiber.pendingProps || {};
     const selectProps = props.selectProps || {};
@@ -3471,11 +3477,6 @@ function findReactSelectComponentFromNode(node) {
         props: hasOptions ? (Array.isArray(props.options) ? props : selectProps) : props,
         source: Array.isArray(props.options) ? "props" : "selectProps"
       };
-    }
-    
-    // Also check for any component that has aria-haspopup='listbox" (strong indicator of select)
-    if (node instanceof Element && node.getAttribute("aria-haspopup") === "listbox") {
-      return { fiber, props: props, source: "aria-haspopup" };
     }
     
     fiber = fiber.return;
