@@ -1,0 +1,41 @@
+{
+  "cmsCatalogUrl": "https://cms.bloombergconnects.org/catalog/audios",
+  "sourceLanguageCode": "en-US",
+  "englishTranscriptUrl": "https://easternstate.org/uploads/media/ESP_English_Audio_Tour_Transcript.pdf",
+  "targetLanguages": [
+    {
+      "key": "spanish",
+      "enabled": false,
+      "cmsLabel": "Spanish (Latin America)",
+      "accessibilityLabel": "Spanish (Latin America)",
+      "transcriptUrl": "https://easternstate.org/uploads/media/ESP_Spanish_Audio_Tour_Transcript.pdf"
+    },
+    {
+      "key": "portuguese",
+      "cmsLabel": "Portuguese",
+      "accessibilityLabel": "Portuguese",
+      "transcriptUrl": "https://easternstate.org/uploads/media/ESP_Portuguese_Audio_Tour_Transcript.pdf"
+    },
+    {
+      "key": "french",
+      "cmsLabel": "French",
+      "accessibilityLabel": "French",
+      "transcriptUrl": "https://easternstate.org/uploads/media/ESP_French_Audio_Tour_Transcript.pdf"
+    },
+    {
+      "key": "italian",
+      "cmsLabel": "Italian",
+      "accessibilityLabel": "Italian",
+      "transcriptUrl": "https://easternstate.org/uploads/media/ESP_Italian_Audio_Tour_Transcript.pdf"
+    },
+    {
+      "key": "german",
+      "cmsLabel": "German",
+      "accessibilityLabel": "German",
+      "transcriptUrl": "https://easternstate.org/uploads/media/ESP_German_Audio_Tour_Transcript.pdf"
+    }
+  ],
+  "excludeStops": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 92, 93, 94],
+  "excludeTitlePatterns": ["pyrrhic defeat", "phyric defeat"],
+  "stopAllowlist": [18]
+}

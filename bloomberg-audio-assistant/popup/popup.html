@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bloomberg Audio Assistant</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header class="header">
+        <div class="mark">BA</div>
+        <div>
+          <h1>Audio Assistant</h1>
+          <p>Bloomberg Connects CMS</p>
+        </div>
+      </header>
+
+      <section class="panel">
+        <h2>Readiness</h2>
+        <div class="status-row">
+          <span id="cms-status" class="dot-status">Checking CMS tab</span>
+          <span id="data-status" class="dot-status">Checking transcript data</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Run</h2>
+        <div class="button-row">
+          <button id="scan" type="button">Scan / Dry Run</button>
+          <button id="start" type="button">Start</button>
+          <button id="resume" type="button">Resume</button>
+          <button id="stop" class="danger-button" type="button">Stop</button>
+        </div>
+        <button id="repair-index" class="secondary-button" type="button">Repair Item Index</button>
+        <button id="export-log" class="secondary-button" type="button">Export Log</button>
+        <p id="run-status" class="status-text">Idle.</p>
+        <p id="current-item" class="current-item"></p>
+      </section>
+
+      <section class="panel">
+        <h2>Counts</h2>
+        <dl class="counts-grid">
+          <div>
+            <dt>Stops</dt>
+            <dd id="count-stops">0</dd>
+          </div>
+          <div>
+            <dt>Tasks</dt>
+            <dd id="count-tasks">0</dd>
+          </div>
+          <div>
+            <dt>Ready</dt>
+            <dd id="count-ready">0</dd>
+          </div>
+          <div>
+            <dt>Complete</dt>
+            <dd id="count-complete">0</dd>
+          </div>
+          <div>
+            <dt>Skipped</dt>
+            <dd id="count-skipped">0</dd>
+          </div>
+          <div>
+            <dt>Failed</dt>
+            <dd id="count-failed">0</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="panel">
+        <h2>Progress Log</h2>
+        <ol id="log" class="log-list"></ol>
+      </section>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

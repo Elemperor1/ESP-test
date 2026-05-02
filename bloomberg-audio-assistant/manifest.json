@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Bloomberg Connects Audio Assistant",
+  "version": "1.0.45",
+  "description": "Adds Eastern State translated audio entries in the Bloomberg Connects CMS.",
+  "permissions": ["downloads", "scripting", "storage", "tabs", "windows"],
+  "host_permissions": [
+    "https://cms.bloombergconnects.org/*",
+    "https://easternstate.org/*"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "action": {
+    "default_popup": "popup/popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://cms.bloombergconnects.org/*"],
+      "js": ["content/bloomberg-audio.js"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["config.default.json", "data/transcripts.json", "page-world/react-select-bridge.js"],
+      "matches": ["https://cms.bloombergconnects.org/*"]
+    }
+  ]
+}
